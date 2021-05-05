@@ -1,0 +1,1595 @@
+/****************************************************************************
+**
+** Copyright (C) 2014 Digia Plc and/or its subsidiary(-ies).
+** Contact: http://www.qt-project.org/legal
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** You may use this file under the terms of the BSD license as follows:
+**
+** "Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of Digia Plc and its Subsidiary(-ies) nor the names
+**     of its contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE."
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include <QtGui>
+
+#include "mainwindow.h"
+#include <QTextCodec>
+#include <stdlib.h>
+#include <QMessageBox>
+#include <QPrintDialog>
+#include <QProgressDialog>
+#include <QPrintPreviewDialog>
+MainWindow::MainWindow(QWidget *parent)
+   : QMainWindow(parent)
+{
+    setupUi(this);
+
+    connect(quitAction, SIGNAL(triggered()), qApp, SLOT(quit()));
+
+    printAction->setEnabled(true);
+    printPreviewAction->setEnabled(true);
+
+    //this->setWindowTitle(tr("13C呼气试验HP检验报告"));
+    this->setWindowTitle(tr("wizreport 1"));
+
+    //this->setFixedSize(960,720);
+
+    this->comp_lb->setText(tr("<style> a {text-decoration: none} </style>  <a href =http://www.wizbiotech.com>厦门为正生物科技股份有限公司</a>"));
+    connect(comp_lb,SIGNAL(linkActivated(QString)),this,SLOT(openUrl(QString)));
+
+    m_LE_List   <<this->m_LE_Sex\
+                <<this->m_LE_Room\
+                <<this->m_LE_SampleType\
+                <<this->m_LE_Purity\
+                <<this->m_LE_Doctor\
+                <<this->m_LE_ImpMan;
+
+
+    //m_datacom = new CDataCom;
+
+    m_aboutDialog = new CAboutDialog;
+    m_aboutDialog->hide();
+
+    m_setDialog = new CSetDialog;
+    m_setDialog->hide();
+
+    m_pCclipborad = QApplication::clipboard();//清空
+
+    this->m_LB_Title->setText(m_setDialog->GetTitle());
+    this->m_LB_Title->setAlignment(Qt::AlignCenter);
+
+
+    connect(this, SIGNAL(SigNewData(QStringList)), this, SLOT(TidyHisData(QStringList)));
+    connect(m_setDialog, SIGNAL(SigCliHintData()), this, SLOT(cliHintData()));
+
+
+    CCommonInterface::get_datacom()->start();
+    connect(CCommonInterface::get_datacom(), SIGNAL(SigCnntSucc(bool)), this, SLOT(SlotCnntStatus(bool)));
+    connect(CCommonInterface::get_datacom(), SIGNAL(SigNewRpt(QStringList)), this, SLOT(SlotNewRpt(QStringList)));
+
+    InitDataToSys();
+
+    //int width = this->m_LW_Details->width();//表单
+    //m_compoSpac<<width*1/9<<width*2.1/9<<width*4.05/9<<width*5.8/9<<width*7.1/9<<width*8.4/9<<width*10.5/9;
+    //qDebug()<<m_compoSpac;
+
+
+    m_timeout = new QTimer;
+    connect(m_timeout, SIGNAL(timeout()), this, SLOT(TimeOutPrss()));
+}
+
+void MainWindow::InitDataToSys()
+{
+    QFile file1(HISH_DB);
+    if(file1.open(QIODevice::ReadOnly))
+    {
+        char acBuff[2048];
+        QStringList filedata;
+        while(!file1.atEnd())
+        {
+            memset(acBuff, 0x00, sizeof(acBuff));
+            file1.readLine(acBuff, sizeof(acBuff));
+            QString tmpstr(acBuff);
+            tmpstr.remove("\n");
+            tmpstr.remove("\r");
+            filedata.append(tmpstr);
+        }
+        for(int i=1;i<filedata.count();i++)
+        {
+            QStringList tmplist = filedata.at(i).split(",");
+            QString tmpstr = filedata.at(i).left(filedata.at(i).length()-32);
+            QString md5 = QCryptographicHash::hash (tmpstr.toLatin1(), QCryptographicHash::Md5).toHex();
+/**/
+            if(tmplist.count()>0)
+            {
+                if(md5 == tmplist.last())
+                {
+                    if(m_LE_Remark->objectName() == tmplist.at(0))
+                    {
+                        for(int at=1;at<(tmplist.count()-1);at++)
+                        {
+                            if(!tmplist.at(at).isEmpty())
+                                m_LE_Remark->addAccount(tmplist.at(at));
+                        }
+                    }
+                }
+            }
+
+        }
+        file1.close();
+    }
+
+    QFile file(HINT_DB);
+
+    if(file.open(QIODevice::ReadOnly))
+    {
+        char acBuff[1024];
+        int numline = 0;
+        while(!file.atEnd())
+        {
+            memset(acBuff, 0x00, sizeof(acBuff));
+            file.readLine(acBuff, sizeof(acBuff));
+            QString tmpstr(acBuff);           
+            tmpstr.remove("\n");
+            tmpstr.remove("\r");
+            QStringList tmplist = tmpstr.split(",");
+            m_hintData.append(tmplist);
+            m_LE_List.at(numline)->addHintStrings(tmplist);
+            m_LE_List.at(numline)->setHintNum(m_setDialog->GetHistoryNum());
+            if(++numline>=m_LE_List.count())
+                break;
+        }
+        file.close();
+    }
+    while(m_hintData.count()<m_LE_List.count())
+        m_hintData.append(QStringList(""));
+    qDebug()<<m_hintData.count();
+}
+
+void MainWindow::closeEvent(QCloseEvent *event)
+{
+    /**/
+    QFile file(HINT_DB);
+    if(file.open(QIODevice::ReadWrite))
+    {
+        for(int i=0;i<m_hintData.count();i++)
+        {
+            QString tmpstr;
+            for(int j=0;j<m_hintData.at(i).count();j++)
+                tmpstr.append(m_hintData.at(i).at(j)+",");
+            tmpstr = tmpstr.left(tmpstr.length()-1);
+            file.write(tmpstr.toLocal8Bit()+"\n");
+        }
+        file.close();
+    }
+
+    QMessageBox::StandardButton button;
+
+    button = QMessageBox::question(this, tr("退出程序"),
+        QString(tr("提示：软件即将关闭，请确保数据已保存!\n     Yes：继续退出  No：返回保存")),
+        QMessageBox::Yes | QMessageBox::No);
+
+    if (button == QMessageBox::No) {
+        event->ignore();  //忽略退出信号，程序继续运行
+   }
+    else if (button == QMessageBox::Yes) {
+        event->accept();  //接受退出信号，程序退出
+
+   }
+   //event->accept();
+}
+#ifndef QT_NO_PRINTER
+void MainWindow::on_printAction_triggered()
+{
+    qDebug()<<"on_printAction_triggered";
+//    pageMap = currentPageMap();
+
+//    if(pageMap.count() == 0)
+//        return;
+    if(m_setDialog->GetPageStye() == "A5")
+    {
+        if(m_hisList.count()>MAX_DTA5_LINE)
+        {
+            QMessageBox::StandardButton button;
+
+            button = QMessageBox::question(this, tr("退出程序"),
+                                           QString(tr("提示：您要打印的条数超过%1条，请删减!")).arg(MAX_DTA5_LINE));
+            return;
+
+        }
+    }
+    else if(m_setDialog->GetPageStye() == "A4")
+    {
+        if(m_hisList.count()>MAX_DTA4_LINE)
+        {
+            QMessageBox::StandardButton button;
+
+            button = QMessageBox::question(this, tr("退出程序"),
+                                           QString(tr("提示：您要打印的条数超过%1条，请删减!")).arg(MAX_DTA4_LINE));
+            return;
+        }
+    }
+    else
+    {
+        if(m_hisList.count()>MAX_DTA4H_LINE)
+        {
+            QMessageBox::StandardButton button;
+
+            button = QMessageBox::question(this, tr("退出程序"),
+                                           QString(tr("提示：您要打印的条数超过%1条，请删减!")).arg(MAX_DTA4H_LINE));
+            return;
+        }
+    }
+
+    QPrinter printer(QPrinter::HighResolution);
+
+    if(m_setDialog->GetPageStye() == "A5")
+    {
+        qDebug()<<"A5";
+        printer.setPageSize(QPrinter::A5);
+        printer.setOrientation(QPrinter::Landscape);
+    }
+    else
+    {
+        qDebug()<<"A4";
+        printer.setPageSize(QPrinter::A4);
+    }
+
+    QPrintDialog dialog(&printer, this);
+    if (dialog.exec() != QDialog::Accepted)
+        return; 
+
+    printDocument(&printer);
+}
+
+void MainWindow::printDocument(QPrinter *printer)
+{
+    qDebug()<<"printDocument";
+
+    SaveClientData(); //保存历史记录
+    if(m_setDialog->GetPageStye() == "A4")
+    {
+       printer->setFromTo(1,1);
+    }
+    else
+    {
+       //printer->setFromTo(1,pageMap.count());
+       printer->setFromTo(1,1);
+
+    }
+
+    QProgressDialog progress(tr("报告单打印"), tr("&Cancel"),0, 1, this);
+    progress.setWindowModality(Qt::ApplicationModal);
+    progress.setWindowTitle(tr("报告单"));
+    progress.setMinimum(printer->fromPage() - 1);
+    progress.setMaximum(printer->toPage());
+
+    QPainter painter;
+    painter.begin(printer);
+    bool firstPage = true;
+
+    for (int page = printer->fromPage(); page <= printer->toPage(); ++page)
+    {
+        if (!firstPage)
+            printer->newPage();
+
+        qApp->processEvents();
+        if (progress.wasCanceled())
+            break;
+
+        printPage(page - 1, &painter, printer);
+        progress.setValue(page);
+        firstPage = false;
+    }
+    painter.end();
+}
+
+void MainWindow::on_printPreviewAction_triggered()
+{
+    qDebug()<<"on_printPreviewAction_triggered";
+    //pageMap = currentPageMap();
+
+    //if(pageMap.count() == 0)
+    //   return;
+
+    if(m_setDialog->GetPageStye() == "A5")
+    {
+        if(m_hisList.count()>MAX_DTA5_LINE)
+        {
+            QMessageBox::StandardButton button;
+
+            button = QMessageBox::question(this, tr("退出程序"),
+                                           QString(tr("提示：您要打印的条数超过%1条，请删减!")).arg(MAX_DTA5_LINE));
+            return;
+
+        }
+    }
+    else if(m_setDialog->GetPageStye() == "A4")
+    {
+        if(m_hisList.count()>MAX_DTA4_LINE)
+        {
+            QMessageBox::StandardButton button;
+
+            button = QMessageBox::question(this, tr("退出程序"),
+                                           QString(tr("提示：您要打印的条数超过%1条，请删减!")).arg(MAX_DTA4_LINE));
+            return;
+
+        }
+    }
+    else
+    {
+        if(m_hisList.count()>MAX_DTA4H_LINE)
+        {
+            QMessageBox::StandardButton button;
+
+            button = QMessageBox::question(this, tr("退出程序"),
+                                           QString(tr("提示：您要打印的条数超过%1条，请删减!")).arg(MAX_DTA4H_LINE));
+            return;
+        }
+    }
+
+    QPrinter printer(QPrinter::HighResolution);
+    if(m_setDialog->GetPageStye() == "A5")
+    {
+        qDebug()<<"A5";
+        printer.setPageSize(QPrinter::A5);
+        //setPaperSize(QSizeF(197,147),QPrinter::Point);
+        printer.setOrientation(QPrinter::Landscape);
+    }
+    else
+    {
+        qDebug()<<"A4";
+        printer.setPageSize(QPrinter::A4);
+
+    }
+    QPrintPreviewDialog preview(&printer, this);
+
+    connect(&preview, SIGNAL(paintRequested(QPrinter*)),this, SLOT(printDocument(QPrinter*)));
+    preview.exec();
+}
+
+void MainWindow::printPage(int index, QPainter *painter, QPrinter *printer)
+{
+    //f_num = pageMap.keys()[index];
+    //family = pageMap[f_num] ;
+    qDebug()<<"printPage";
+
+    qreal width = printer->pageRect().width();
+    qreal height = printer->pageRect().height();
+    //qDebug()<<printer->pageSize()<<width<<height;
+
+    painter->save();
+    painter->translate(0, 0);
+    painter->scale(1, 1);
+    painter->setBrush(QBrush(Qt::black));
+
+
+
+    if(m_setDialog->GetPageStye() == "A5")
+    {
+        QFont font("宋体", 20, QFont::Normal, false);
+        font = QFont(font, painter->device());
+        QFontMetricsF fontMetrics(font);
+        QRectF rect = fontMetrics.boundingRect(this->m_LB_Title->text());
+
+        qreal x = (width-rect.width())/2;
+        qreal y = rect.height();
+
+        painter->setFont(font);
+        painter->drawText(QPointF(x,y),this->m_LB_Title->text());
+/*
+        font = QFont(QFont("宋体", 10, QFont::Normal, false), painter->device());
+        fontMetrics = QFontMetricsF(font);
+        rect = fontMetrics.boundingRect(this->m_LB_Name->text()+" ");
+        painter->setFont(font);
+        x = width/18;
+        y += rect.height()*2;
+        painter->drawText(QPointF(x,y),this->m_LB_Name->text());
+        x += rect.width();
+        painter->drawText(QPointF(x,y),this->m_LE_Name->text());
+
+        rect = fontMetrics.boundingRect(this->m_LB_Sex->text()+" ");
+        x = width*5/18;
+        painter->drawText(QPointF(x,y),this->m_LB_Sex->text());
+        x += rect.width();
+        painter->drawText(QPointF(x,y),this->m_LE_Sex->text());
+
+        rect = fontMetrics.boundingRect(this->m_LB_Age->text()+" ");
+        x = width*9/18;
+        painter->drawText(QPointF(x,y),this->m_LB_Age->text());
+        x += rect.width();
+        painter->drawText(QPointF(x,y),this->m_LE_Age->text());
+
+        rect = fontMetrics.boundingRect(this->m_LB_SampleType->text()+" ");
+        x = width*13/18;
+        painter->drawText(QPointF(x,y),this->m_LB_SampleType->text());
+        x += rect.width();
+        painter->drawText(QPointF(x,y),this->m_LE_SampleType->text());
+
+        rect = fontMetrics.boundingRect(this->m_LB_ExamID->text()+" ");
+        x = width/18;
+        y += rect.height()*1.5;
+        painter->drawText(QPointF(x,y),this->m_LB_ExamID->text());
+        x += rect.width();
+        painter->drawText(QPointF(x,y),this->m_LE_ExamID->text());
+
+        rect = fontMetrics.boundingRect(this->m_LB_Room->text()+" ");
+        x = width*5/18;
+        painter->drawText(QPointF(x,y),this->m_LB_Room->text());
+        x += rect.width();
+        painter->drawText(QPointF(x,y),this->m_LE_Room->text());
+
+        rect = fontMetrics.boundingRect(this->m_LB_Doctor->text()+" ");
+        x = width*9/18;
+        painter->drawText(QPointF(x,y),this->m_LB_Doctor->text());
+        x += rect.width();
+        painter->drawText(QPointF(x,y),this->m_LE_Doctor->text());
+
+        rect = fontMetrics.boundingRect(this->m_LB_SampleNum->text()+" ");
+        x = width*13/18;
+        painter->drawText(QPointF(x,y),this->m_LB_SampleNum->text());
+        x += rect.width();
+        painter->drawText(QPointF(x,y),this->m_LE_SampleNum->text());
+
+        rect = fontMetrics.boundingRect(this->m_LB_BarCode->text()+" ");
+        x = width/18;
+        y += rect.height()*1.5;
+        painter->drawText(QPointF(x,y),this->m_LB_BarCode->text());
+        x += rect.width();
+        painter->drawText(QPointF(x,y),this->m_LE_BarCode->text());
+
+        rect = fontMetrics.boundingRect(this->m_LB_Diagnose->text()+" ");
+        x = width*9/18;
+        painter->drawText(QPointF(x,y),this->m_LB_Diagnose->text());
+        x += rect.width();
+        painter->drawText(QPointF(x,y),this->m_LE_Diagnose->text());
+
+        rect = fontMetrics.boundingRect(this->m_LB_Remark->text()+" ");
+        x = width/18;
+        y += rect.height()*1.5;
+        painter->drawText(QPointF(x,y),this->m_LB_Remark->text());
+        x += rect.width();
+        painter->drawText(QRectF(x,y-rect.height()*6/7,width-x*1.5,rect.height()*3.3),
+                          Qt::TextWrapAnywhere,
+                          this->m_LE_Remark->currentText());
+
+        //横线
+        x = width/18;
+        y += rect.height()*3;
+        QPen linePen(Qt::SolidLine);
+        linePen.setWidth(5);
+        painter->setPen(linePen);
+        painter->drawLine(QLine(x,y,width-x,y));
+
+        font = QFont(QFont("宋体", 8, QFont::Normal, false), painter->device());
+        fontMetrics = QFontMetricsF(font);
+        painter->setFont(font);
+
+        QString tmpstr;
+        QList<int> printSpac;
+        printSpac<<width*1/18<<width*2.5/18<<width*6/18<<width*8/18<<width*10/18<<width*12.5/18<<width*15.5/18;
+
+        y += rect.height()*1.1;
+        for(int j=1;j<printSpac.count();j++)
+        {
+            tmpstr.append(m_datatitle.at(j));
+            do{
+                //qDebug()<<tmpstr;
+                tmpstr.append(" ");
+                rect = fontMetrics.boundingRect(tmpstr);
+            }while(printSpac.at(j)>rect.width());
+        }
+        painter->drawText(QPointF(x,y),tmpstr);
+
+        x = width/18;
+        printSpac[4] = width*11.2/18;
+        tmpstr.clear();
+
+
+
+        font = QFont(QFont("宋体", 10, QFont::Normal, false), painter->device());
+        fontMetrics = QFontMetricsF(font);
+        painter->setFont(font);
+
+        rect = fontMetrics.boundingRect(tr("*本结果仅对此标本负责*"));
+        x = width*11/18;
+        y = height - rect.height();
+        painter->drawText(QPointF(x,y),tr("*本结果仅对此标本负责*"));
+
+        rect = fontMetrics.boundingRect(this->m_LB_ImpMan->text()+" ");
+        x = width/18;
+        y -= rect.height()*1.5;
+        painter->drawText(QPointF(x,y),this->m_LB_ImpMan->text());
+        x += rect.width();
+        painter->drawText(QPointF(x,y),this->m_LE_ImpMan->text());
+
+        rect = fontMetrics.boundingRect(this->m_LB_VerMan->text()+" ");
+        x = width*6.5/18;
+        painter->drawText(QPointF(x,y),this->m_LB_VerMan->text());
+        x += rect.width();
+        painter->drawText(QPointF(x,y),this->m_LE_VerMan->text());
+
+        rect = fontMetrics.boundingRect(this->m_LB_GetTime->text()+" ");
+        x = width/18;
+        y -= rect.height()*1.5;
+        painter->drawText(QPointF(x,y),this->m_LB_GetTime->text());
+        x += rect.width();
+        painter->drawText(QPointF(x,y),this->m_LE_GetTime->text());
+
+        rect = fontMetrics.boundingRect(this->m_LB_TestTime->text()+" ");
+        x = width*6.5/18;
+        painter->drawText(QPointF(x,y),this->m_LB_TestTime->text());
+        x += rect.width();
+        painter->drawText(QPointF(x,y),this->m_LE_TestTime->text());
+
+        rect = fontMetrics.boundingRect(this->m_LB_InfoTime->text()+" ");
+        x = width*12/18;
+        painter->drawText(QPointF(x,y),this->m_LB_InfoTime->text());
+        x += rect.width();
+        painter->drawText(QPointF(x,y),this->m_LE_InfoTime->text());
+*/
+        x = width/18;
+        y -= rect.height()*1.5;
+        //painter->setPen(Qt::SolidLine);
+        painter->drawLine(QLine(x,y,width-x,y));
+    }
+    else if(m_setDialog->GetPageStye() == "A4")
+    {
+        QFont font("宋体", 22, QFont::Normal, false);
+        font = QFont(font, painter->device());
+        QFontMetricsF fontMetrics(font);
+        QRectF rect = fontMetrics.boundingRect(this->m_LB_Title->text());
+
+        qreal x = (width-rect.width())/2;
+        qreal y = rect.height()*3.5/2;
+
+        painter->setFont(font);
+        painter->drawText(QPointF(x,y),this->m_LB_Title->text());
+
+        rect = fontMetrics.boundingRect(this->m_LE_SampleType->text());
+        x = (width-rect.width())/2;
+        y += rect.height()*3/2;
+        painter->drawText(QPointF(x,y),this->m_LE_SampleType->text());
+
+        font = QFont(QFont("宋体", 12, QFont::Normal, false), painter->device());
+        fontMetrics = QFontMetricsF(font);
+        painter->setFont(font);
+
+        y += rect.height();
+        rect = fontMetrics.boundingRect("个人信息");
+        x = width/18;
+
+        //painter->setPen(QPen(Qt::black));
+        //painter->drawRect(width/18,y,width-x*2,height/30);
+        //painter->setBrush(QBrush(Qt::black));
+        painter->fillRect(x,y,width-x*2,rect.height()*1.5,Qt::GlobalColor(Qt::lightGray));
+        y += rect.height();
+        painter->drawText(QPointF((width-rect.width())/2,y),"个人信息");
+ //-------------------------------------------------------------------------------
+        y += rect.height()*2;
+
+        rect = fontMetrics.boundingRect(this->m_LB_Name->text()+" ");
+        x = width/14;
+        painter->drawText(QPointF(x,y),this->m_LB_Name->text());
+        x += rect.width();
+        painter->drawText(QPointF(x,y),this->m_LE_Name->text());
+
+        rect = fontMetrics.boundingRect(this->m_LB_Sex->text()+" ");
+        x = width*5/14;
+        painter->drawText(QPointF(x,y),this->m_LB_Sex->text());
+        x += rect.width();
+        painter->drawText(QPointF(x,y),this->m_LE_Sex->text());
+
+        rect = fontMetrics.boundingRect(this->m_LB_Age->text()+" ");
+        x = width*9/14;
+        painter->drawText(QPointF(x,y),this->m_LB_Age->text());
+        x += rect.width();
+        painter->drawText(QPointF(x,y),this->m_LE_Age->text());
+ //-------------------------------------------------------------------------------
+        y += rect.height()*1.5;
+
+        rect = fontMetrics.boundingRect(this->m_LB_Room->text()+" ");
+        x = width/14;
+        painter->drawText(QPointF(x,y),this->m_LB_Room->text());
+        x += rect.width();
+        painter->drawText(QPointF(x,y),this->m_LE_Room->text());
+
+        rect = fontMetrics.boundingRect(this->m_LB_ExamID->text()+" ");
+        x = width*5/14;
+        painter->drawText(QPointF(x,y),this->m_LB_ExamID->text());
+        x += rect.width();
+        painter->drawText(QPointF(x,y),this->m_LE_ExamID->text());
+
+
+        rect = fontMetrics.boundingRect(this->m_LB_SickNum->text()+" ");
+        x = width*9/14;
+        painter->drawText(QPointF(x,y),this->m_LB_SickNum->text());
+        x += rect.width();
+        painter->drawText(QPointF(x,y),this->m_LE_SickNum->text());
+
+ //-------------------------------------------------------------------------------
+        y += rect.height()*1.5;
+
+        rect = fontMetrics.boundingRect(this->m_LB_SampleType->text()+" ");
+        x = width/14;
+        painter->drawText(QPointF(x,y),this->m_LB_SampleType->text());
+        x += rect.width();
+        painter->drawText(QPointF(x,y),this->m_LE_SampleType->text());
+
+        rect = fontMetrics.boundingRect(this->m_LB_Purity->text()+" ");
+        x = width*5/14;
+        painter->drawText(QPointF(x,y),this->m_LB_Purity->text());
+        x += rect.width();
+        painter->drawText(QPointF(x,y),this->m_LE_Purity->text());
+
+        rect = fontMetrics.boundingRect(this->m_LB_BarCode->text()+" ");
+        x = width*9/14;
+        painter->drawText(QPointF(x,y),this->m_LB_BarCode->text());
+        x += rect.width();
+        painter->drawText(QPointF(x,y),this->m_LE_BarCode->text());
+
+//-------------------------------------------------------------------------------
+        y += rect.height()*1.5;
+
+        rect = fontMetrics.boundingRect(this->m_LB_Doctor->text()+" ");
+        x = width/14;
+        painter->drawText(QPointF(x,y),this->m_LB_Doctor->text());
+        x += rect.width();
+        painter->drawText(QPointF(x,y),this->m_LE_Doctor->text());
+
+
+        rect = fontMetrics.boundingRect(this->m_LB_ImpMan->text()+" ");
+        x = width*5/14;
+        painter->drawText(QPointF(x,y),this->m_LB_ImpMan->text());
+        x += rect.width();
+        painter->drawText(QPointF(x,y),this->m_LE_ImpMan->text());
+
+        rect = fontMetrics.boundingRect(this->m_LB_TestTime->text()+" ");
+        x = width*9/14;
+        painter->drawText(QPointF(x,y),this->m_LB_TestTime->text());
+        x += rect.width();
+        painter->drawText(QPointF(x,y),this->m_LE_TestTime->text());
+
+        y += rect.height();
+        rect = fontMetrics.boundingRect("检验结果");
+        x = width/18;
+
+        painter->fillRect(x,y,width-x*2,rect.height()*1.5,Qt::GlobalColor(Qt::lightGray));
+        y += rect.height();
+        painter->drawText(QPointF((width-rect.width())/2,y),"检验结果");
+/*
+        x = width/18;
+        y += rect.height()*3;
+        QPen linePen(Qt::SolidLine);
+        linePen.setWidth(5);
+        painter->setPen(linePen);
+        painter->drawLine(QLine(x,y,width-x,y));
+*/
+        y += rect.height()*2;
+
+        rect = fontMetrics.boundingRect(this->m_LB_Norm->text()+" ");
+        x = width/14;
+        painter->drawText(QPointF(x,y),this->m_LB_Norm->text());
+        x += rect.width();
+        painter->drawText(QPointF(x,y),this->m_LE_Norm->text());
+
+        rect = fontMetrics.boundingRect(this->m_LB_Value->text()+" ");
+        x = width*5/14;
+        painter->drawText(QPointF(x,y),this->m_LB_Value->text());
+        x += rect.width();
+        painter->drawText(QPointF(x,y),this->m_LE_Value->text());
+
+        rect = fontMetrics.boundingRect(this->m_LB_Res->text()+" ");
+        x = width*9/14;
+        painter->drawText(QPointF(x,y),this->m_LB_Res->text());
+        x += rect.width();
+        painter->drawText(QPointF(x,y),this->m_LE_Res->text());
+
+        y += rect.height();
+        rect = fontMetrics.boundingRect("检验标准");
+        x = width/18;
+
+        painter->fillRect(x,y,width-x*2,rect.height()*1.5,Qt::GlobalColor(Qt::lightGray));
+        y += rect.height();
+        painter->drawText(QPointF((width-rect.width())/2,y),"检验标准");
+
+        y += rect.height()*2;
+
+        rect = fontMetrics.boundingRect(this->m_LB_Refer->text()+" ");
+        x = (width-rect.width())/2;
+        painter->drawText(QPointF(x,y),this->m_LB_Refer->text());
+
+        y += rect.height();
+        rect = fontMetrics.boundingRect("图形分析");
+        x = width/18;
+
+        painter->fillRect(x,y,width-x*2,rect.height()*1.5,Qt::GlobalColor(Qt::lightGray));
+        y += rect.height();
+        painter->drawText(QPointF((width-rect.width())/2,y),"图形分析");
+
+        y += rect.height();
+        rect = fontMetrics.boundingRect("结果评价");
+        x = width/18;
+
+        painter->fillRect(x,y,width-x*2,rect.height()*1.5,Qt::GlobalColor(Qt::lightGray));
+        y += rect.height();
+        painter->drawText(QPointF((width-rect.width())/2,y),"结果评价");
+
+        y += rect.height()*2;
+
+        rect = fontMetrics.boundingRect(this->m_LE_Remark->currentText()+" ");
+        x = width/14;
+        painter->drawText(QPointF(x,y),this->m_LE_Remark->currentText());
+
+        //A4
+        QString tmpstr;
+        QList<int> printSpac;
+        printSpac<<width*1/18<<width*2.5/18<<width*6/18<<width*8/18<<width*10/18<<width*12.5/18<<width*15.5/18;
+        qDebug()<<printSpac;
+
+
+        rect = fontMetrics.boundingRect(tr("*本结果仅对此标本负责*"));
+        x = width*11/18;
+        y = height - rect.height()*2;
+        painter->drawText(QPointF(x,y),tr("*本结果仅对此标本负责*"));
+
+        x = width/18;
+        y -= rect.height()*1.5;
+        painter->setPen(Qt::SolidLine);
+        painter->drawLine(QLine(x,y,width-x,y));
+
+    }
+    else
+    {
+        /*
+        QFont font("宋体", 16, QFont::Normal, false);
+        font = QFont(font, painter->device());
+        QFontMetricsF fontMetrics(font);
+        QRectF rect = fontMetrics.boundingRect(this->m_LB_Title->text());
+
+        qreal x = (width-rect.width())/2;
+        qreal y = rect.height()*2.5/2;
+
+        painter->setFont(font);
+        painter->drawText(QPointF(x,y),this->m_LB_Title->text());
+
+        font = QFont(QFont("宋体", 10, QFont::Normal, false), painter->device());
+        fontMetrics = QFontMetricsF(font);
+        rect = fontMetrics.boundingRect(this->m_LB_Name->text()+" ");
+        painter->setFont(font);
+        x = width/18;
+        y += rect.height()*3;
+        painter->drawText(QPointF(x,y),this->m_LB_Name->text());
+        x += rect.width();
+        painter->drawText(QPointF(x,y),this->m_LE_Name->text());
+
+        rect = fontMetrics.boundingRect(this->m_LB_Sex->text()+" ");
+        x = width*5/18;
+        painter->drawText(QPointF(x,y),this->m_LB_Sex->text());
+        x += rect.width();
+        painter->drawText(QPointF(x,y),this->m_LE_Sex->text());
+
+        rect = fontMetrics.boundingRect(this->m_LB_Age->text()+" ");
+        x = width*9/18;
+        painter->drawText(QPointF(x,y),this->m_LB_Age->text());
+        x += rect.width();
+        painter->drawText(QPointF(x,y),this->m_LE_Age->text());
+
+        rect = fontMetrics.boundingRect(this->m_LB_SampleType->text()+" ");
+        x = width*13/18;
+        painter->drawText(QPointF(x,y),this->m_LB_SampleType->text());
+        x += rect.width();
+        painter->drawText(QPointF(x,y),this->m_LE_SampleType->text());
+
+        rect = fontMetrics.boundingRect(this->m_LB_SickID->text()+" ");
+        x = width/18;
+        y += rect.height()*1.5;
+        painter->drawText(QPointF(x,y),this->m_LB_SickID->text());
+        x += rect.width();
+        painter->drawText(QPointF(x,y),this->m_LE_SickID->text());
+
+        rect = fontMetrics.boundingRect(this->m_LB_Room->text()+" ");
+        x = width*5/18;
+        painter->drawText(QPointF(x,y),this->m_LB_Room->text());
+        x += rect.width();
+        painter->drawText(QPointF(x,y),this->m_LE_Room->text());
+
+        rect = fontMetrics.boundingRect(this->m_LB_Doctor->text()+" ");
+        x = width*9/18;
+        painter->drawText(QPointF(x,y),this->m_LB_Doctor->text());
+        x += rect.width();
+        painter->drawText(QPointF(x,y),this->m_LE_Doctor->text());
+
+        rect = fontMetrics.boundingRect(this->m_LB_SampleNum->text()+" ");
+        x = width*13/18;
+        painter->drawText(QPointF(x,y),this->m_LB_SampleNum->text());
+        x += rect.width();
+        painter->drawText(QPointF(x,y),this->m_LE_SampleNum->text());
+
+        rect = fontMetrics.boundingRect(this->m_LB_BarCode->text()+" ");
+        x = width/18;
+        y += rect.height()*1.5;
+        painter->drawText(QPointF(x,y),this->m_LB_BarCode->text());
+        x += rect.width();
+        painter->drawText(QPointF(x,y),this->m_LE_BarCode->text());
+
+        rect = fontMetrics.boundingRect(this->m_LB_Diagnose->text()+" ");
+        x = width*9/18;
+        painter->drawText(QPointF(x,y),this->m_LB_Diagnose->text());
+        x += rect.width();
+        painter->drawText(QPointF(x,y),this->m_LE_Diagnose->text());
+
+        rect = fontMetrics.boundingRect(this->m_LB_Remark->text()+" ");
+        x = width/18;
+        y += rect.height()*1.5;
+        painter->drawText(QPointF(x,y),this->m_LB_Remark->text());
+        x += rect.width();
+        painter->drawText(QRectF(x,y-rect.height()*6/7,width-x*1.5,rect.height()*3.3),
+                          Qt::TextWrapAnywhere,
+                          this->m_LE_Remark->currentText());//toPlainText
+
+        x = width/18;
+        y += rect.height()*3;
+        QPen linePen(Qt::SolidLine);
+        linePen.setWidth(5);
+        painter->setPen(linePen);
+        painter->drawLine(QLine(x,y,width-x,y));
+
+        font = QFont(QFont("宋体", 8, QFont::Normal, false), painter->device());
+        fontMetrics = QFontMetricsF(font);
+        painter->setFont(font);
+        QString tmpstr;  //标题
+        QList<int> printSpac;
+        printSpac<<width*1/18<<width*2.6/18<<width*5.8/18<<width*7.9/18<<width*10/18<<width*12.5/18<<width*15.5/18;
+        //qDebug()<<printSpac;
+        y += rect.height()*1.1;
+        for(int j=1;j<printSpac.count();j++)
+        {
+            tmpstr.append(m_datatitle.at(j));
+            do{
+                tmpstr.append(" ");
+                rect = fontMetrics.boundingRect(tmpstr);
+            }while(printSpac.at(j)>rect.width());
+        }
+        painter->drawText(QPointF(x,y),tmpstr);
+
+        x = width/18;
+        printSpac[4] = width*11.2/18;
+        tmpstr.clear();
+
+
+        font = QFont(QFont("宋体", 10, QFont::Normal, false), painter->device());
+        fontMetrics = QFontMetricsF(font);
+        painter->setFont(font);
+
+        rect = fontMetrics.boundingRect(tr("*本结果仅对此标本负责*"));
+        x = width*11/18;
+        y = height/2 - rect.height()*2;
+        painter->drawText(QPointF(x,y),tr("*本结果仅对此标本负责*"));
+
+        rect = fontMetrics.boundingRect(this->m_LB_ImpMan->text()+" ");
+        x = width/18;
+        y -= rect.height()*1.5;
+        painter->drawText(QPointF(x,y),this->m_LB_ImpMan->text());
+        x += rect.width();
+        painter->drawText(QPointF(x,y),this->m_LE_ImpMan->text());
+
+        rect = fontMetrics.boundingRect(this->m_LB_VerMan->text()+" ");
+        x = width*6.5/18;
+        painter->drawText(QPointF(x,y),this->m_LB_VerMan->text());
+        x += rect.width();
+        painter->drawText(QPointF(x,y),this->m_LE_VerMan->text());
+
+        rect = fontMetrics.boundingRect(this->m_LB_GetTime->text()+" ");
+        x = width/18;
+        y -= rect.height()*1.5;
+        painter->drawText(QPointF(x,y),this->m_LB_GetTime->text());
+        x += rect.width();
+        painter->drawText(QPointF(x,y),this->m_LE_GetTime->text());
+
+        rect = fontMetrics.boundingRect(this->m_LB_TestTime->text()+" ");
+        x = width*6.5/18;
+        painter->drawText(QPointF(x,y),this->m_LB_TestTime->text());
+        x += rect.width();
+        painter->drawText(QPointF(x,y),this->m_LE_TestTime->text());
+
+        rect = fontMetrics.boundingRect(this->m_LB_InfoTime->text()+" ");
+        x = width*12/18;
+        painter->drawText(QPointF(x,y),this->m_LB_InfoTime->text());
+        x += rect.width();
+        painter->drawText(QPointF(x,y),this->m_LE_InfoTime->text());
+
+        x = width/18;
+        y -= rect.height()*1.2;
+        //painter->setPen(Qt::SolidLine);
+        painter->drawLine(QLine(x,y,width-x,y));*/
+    }
+    painter->restore();
+}
+#endif
+void MainWindow::on_atNew_triggered()
+{
+    this->m_LE_Name->clear();
+    this->m_LE_Sex->clear();
+    this->m_LE_Age->clear();
+    this->m_LE_SampleType->clear();
+    this->m_LE_ExamID->clear();
+    this->m_LE_Room->clear();
+    this->m_LE_Doctor->clear();
+    this->m_LE_SickNum->clear();
+    this->m_LE_BarCode->clear();
+    this->m_LE_TestTime->clear();
+    this->m_LE_ImpMan->clear();
+    this->m_LE_Norm->clear();
+    this->m_LE_Value->clear();
+    this->m_LE_Res->clear();
+    this->m_LB_Refer->setText("参考值");
+    this->m_LE_Remark->clear();
+    m_hisList.clear();
+}
+void MainWindow::on_atOpen_triggered()
+{
+    /*
+    //QString tmpstr;
+    QStringList tmpstr;
+    int flinenum = 0;
+    QString fileName = QFileDialog::getOpenFileName(this, tr("Open File"),
+                                                    "./",
+                                                    tr("BTQ文件(*.btq)"));
+    QFile file(fileName);
+    if(file.open(QIODevice::ReadOnly))
+    {
+        char acBuff[512];
+        while(!file.atEnd())
+        {
+            memset(acBuff, 0x00, sizeof(acBuff));
+            file.readLine(acBuff, sizeof(acBuff));
+            tmpstr.append(acBuff);
+            tmpstr.last().remove("\n");
+            flinenum++;
+        }
+        file.close();
+        if(flinenum < 16+5) return;
+        //if(tmpstr.at(1) != VERSIONS)return;
+        if(tmpstr.at(2).toInt() < 16) return;
+        if((tmpstr.first() == "biotime") && (tmpstr.last() == "biotime"))
+        {
+            this->m_LE_Name->setText(tmpstr.at(3));
+            this->m_LE_Sex->setText(tmpstr.at(4));
+            this->m_LE_Age->setText(tmpstr.at(5));
+            this->m_LE_SampleType->setText(tmpstr.at(6));
+            this->m_LE_SickID->setText(tmpstr.at(7));
+            this->m_LE_Room->setText(tmpstr.at(8));
+            this->m_LE_Doctor->setText(tmpstr.at(9));
+            this->m_LE_SampleNum->setText(tmpstr.at(10));
+            this->m_LE_Diagnose->setText(tmpstr.at(11));
+            this->m_LE_BarCode->setText(tmpstr.at(12));
+            this->m_LE_Remark->setEditText(tmpstr.at(13));
+            this->m_LE_GetTime->setText(tmpstr.at(14));
+            this->m_LE_TestTime->setText(tmpstr.at(15));
+            this->m_LE_InfoTime->setText(tmpstr.at(16));
+            this->m_LE_ImpMan->setText(tmpstr.at(17));
+            this->m_LE_VerMan->setText(tmpstr.at(18));
+
+            m_hisList.clear();
+            for(int i=0;i<tmpstr.at(2).toInt() - 16;i++)
+            {
+                QStringList tmplist = tmpstr.at(19+i).split(",");
+                m_hisList.append(tmplist);
+                if(m_hisList.at(i).at(1)=="PROG")
+                {
+                    if(tmplist.at(3).toDouble() != 0)
+                    {
+                        if(tmplist.at(4) == "nmol/L")
+                        {
+                            qres[(m_hisList[i][0]).toInt()] = (tmplist.at(3).toDouble())/3.12;
+                        }
+                        else
+                        {
+                            qres[(m_hisList[i][0]).toInt()] = tmplist.at(3).toDouble();
+                        }
+
+                        if( m_setDialog->GetUnitStye() == tmplist.at(4) )
+                        {
+                            m_hisList[i][3]=tmplist.at(3);
+                            m_hisList[i][4]=tmplist.at(4);
+                        }
+                        else if(( m_setDialog->GetUnitStye() == "nmol/L")&&(tmplist.at(4) == "ng/mL"))
+                        {
+                            m_hisList[i][3]=QString::number(qres[(m_hisList[i][0]).toInt()]*3.12,'f',2);
+                            m_hisList[i][4]=m_setDialog->GetUnitStye();
+                        }
+                        else if(( m_setDialog->GetUnitStye() == "ng/mL")&&(tmplist.at(4) == "nmol/L"))
+                        {
+                            m_hisList[i][3]=QString::number(qres[(m_hisList[i][0]).toInt()],'f',2);
+                            m_hisList[i][4]=m_setDialog->GetUnitStye();
+                        }
+                    }
+                    else
+                    {
+                        m_hisList[i][3]=tmplist.at(3);
+                        m_hisList[i][4]=m_setDialog->GetUnitStye();
+
+                   }
+                }
+            }
+            ShowHisData(0);
+        }
+        //qDebug()<<tmpstr;
+    }
+    */
+}
+void MainWindow::on_atSave_triggered()
+{
+/*
+    QString tempName= m_setDialog->GetSaveURL();
+    //tempName.append("\\"+this->m_LE_InfoTime->text());
+    QDir SavePath(tempName);
+    if(!SavePath.exists())
+    {
+        if(!SavePath.mkdir(SavePath.absolutePath()))
+           return ;
+    }
+
+    tempName.append("\\"+GetSaveDataName()+".btq");
+    QString fileName = QFileDialog::getSaveFileName(this, tr("Open File"),
+                                                    tempName,
+                                                    tr("BTQ文件(*.btq)"));
+    if(fileName.size() > 0)
+    {
+        QFile file(fileName);
+        if(file.open(QIODevice::WriteOnly))
+        {
+            file.write(GetSaveData().toLocal8Bit());
+            file.close();
+            RecordHintData();//保存输入记录
+        }
+    }
+    */
+}
+void MainWindow::on_atSaveAs_triggered()
+{
+    /*
+    QString tempName = " ";
+    tempName.append(GetSaveDataName());
+    QString fileName = QFileDialog::getSaveFileName(this, tr("Open File"),
+                                                    tempName,
+                                                    tr("TXT文件(*.txt)"));
+    if(fileName.size() > 0)
+    {
+        QFile file(fileName);
+        if(file.open(QIODevice::WriteOnly))
+        {
+            QString tmp;
+            //QTextCodec *codec = QTextCodec::codecForName("GBK");
+
+            for(int i=0;i<m_datatitle.count();i++)
+                tmp.append(m_datatitle.at(i)+",");
+            tmp.append(tr("检测时间"));
+            //QByteArray  str = codec->fromUnicode(tmp);
+            file.write(tmp.toLocal8Bit()+"\r\n");
+            for(int i=0;i<m_hisList.count();i++)
+            {
+                tmp.clear();
+                for(int j=0;j<m_hisList.at(i).count();j++)
+                    tmp.append(m_hisList.at(i).at(j)+",");
+                tmp = tmp.left(tmp.length()-1);
+                //QByteArray  str = codec->fromUnicode(tmp);
+                file.write(tmp.toLocal8Bit()+"\r\n");
+            }
+            file.close();
+        }
+    }
+    */
+}
+void MainWindow::on_atCopy_triggered()
+{
+    /*
+    QString tmpStr;
+    int crow = this->m_LW_Details->currentRow();
+    if((crow >= 0) && (crow<this->m_LW_Details->count()))
+        for(int i=0;i<m_hisList.at(crow).count();i++)
+        {
+            tmpStr.append(m_hisList.at(crow).at(i)+"\t");
+        }
+    m_pCclipborad->setText(tmpStr);
+    */
+}
+void MainWindow::on_atPaste_triggered()
+{
+    qDebug()<<QApplication::focusWidget()->winId();
+}
+void MainWindow::on_atDele_triggered()
+{
+}
+void MainWindow::on_atSet_triggered()
+{
+    if(m_setDialog->exec() == QDialog::Accepted)
+    {
+        this->m_LB_Title->setText(m_setDialog->GetTitle());
+        for(int i=0;i<m_LE_List.count();i++)
+        {
+            m_LE_List.at(i)->setHintNum(m_setDialog->GetHistoryNum());
+        }
+    }
+}
+void MainWindow::on_atManual_triggered()
+{
+    QDialog * w  = new QDialog;
+    Ui::Chelpdialog help;
+    help.setupUi(w);
+    w->setWindowTitle(tr("帮助"));
+    w->exec();
+
+}
+void MainWindow::on_atAbout_triggered()
+{
+    if(m_aboutDialog->exec() == QDialog::Accepted)
+    {
+    }
+}
+void MainWindow::on_atConnect_triggered() // 连接
+{
+    if(CCommonInterface::get_datacom()->isBuildCommt())
+    {
+        if(CCommonInterface::get_datacom()->BreakToSerPort())
+        {
+
+        }
+    }
+    else
+    {
+        if(CCommonInterface::get_datacom()->ConnectToSerPort())
+        {
+        }
+    }
+}
+
+
+void MainWindow::SlotCnntStatus(bool status)
+{
+
+    qDebug()<<"SlotCnntStatus = "<<status;
+
+    if(status == true)
+    {
+        this->atConnect->setText(tr("断开"));
+        this->atConnect->setIcon(QIcon(":/images/ok.png"));
+    }
+    else
+    {
+        this->atConnect->setText(tr("连接"));
+        this->atConnect->setIcon(QIcon(":/images/apply.png"));
+    }
+}
+void MainWindow::SlotNewRpt(QStringList data)
+{
+
+    qDebug()<<data;
+    this->m_LE_TestTime->setText(data.at(RECV_RECV_DateTime));
+    this->m_LE_SampleType->setText(data.at(RECV_ProductName));
+    this->m_LE_Value->setText(data.at(RECV_RptString));
+
+    QTextCodec *codec = QTextCodec::codecForName("UTF-8");
+    QByteArray re = codec->fromUnicode(data.at(RECV_QFString));
+    qDebug()<<QString::fromLocal8Bit(re);
+    this->m_LE_Res->setText(QString::fromUtf8(re));
+    this->m_LB_Refer->setText(data.at(RECV_Reference));
+}
+
+
+void MainWindow::ShowHisData(int curr)
+{
+
+}
+
+void MainWindow::RecordHintData()
+{
+    for(int i=0;i<m_LE_List.count();i++)
+    {
+        QString tmpstr = m_LE_List.at(i)->text();
+        tmpstr.remove(" ");
+        if(m_hintData.at(i).indexOf(tmpstr)>=0)
+            continue;
+        if(m_hintData.at(i).count()>100)
+        {
+            m_hintData[i].removeLast();
+        }
+        m_hintData[i].insert(0,tmpstr);
+        m_LE_List.at(i)->addHintStrings(m_hintData.at(i));
+    }
+}
+
+QString MainWindow::GetSaveDataName()
+{
+    QString tmpstr;
+    int n = m_setDialog->GetNameStye();
+    int a[2] = {n/10,n%10};
+    for(int i=0;i<2;i++)
+    {
+        switch(a[i])
+        {
+        case 0:
+            tmpstr.append(this->m_LE_Name->text());
+            break;
+        case 1:
+            tmpstr.append(this->m_LE_ExamID->text());
+            break;
+        case 2:
+            tmpstr.append(this->m_LE_Sex->text());
+            break;
+        case 3:
+            tmpstr.append(this->m_LE_Age->text());
+            break;
+        case 4:
+            //tmpstr.append(this->m_LE_InfoTime->text());
+            break;
+        default:
+            break;
+
+        }
+        tmpstr.append("_");
+    }
+    tmpstr = tmpstr.left(tmpstr.length()-1);
+    return tmpstr;
+}
+
+QString MainWindow::GetSaveData()
+{
+
+    QString tmpstr;
+
+    tmpstr.append("wizreport\n");
+    tmpstr.append(VERSIONS);
+    tmpstr.append("\n");
+    tmpstr.append(this->m_LE_Name->text()+"\n");
+    tmpstr.append(this->m_LE_Sex->text()+"\n");
+    tmpstr.append(this->m_LE_Age->text()+"\n");
+    tmpstr.append(this->m_LE_Room->text()+"\n");
+    tmpstr.append(this->m_LE_ExamID->text()+"\n");
+    tmpstr.append(this->m_LE_SickNum->text()+"\n");
+    tmpstr.append(this->m_LE_SampleType->text()+"\n");
+    tmpstr.append(this->m_LE_Purity->text()+"\n");
+    tmpstr.append(this->m_LE_BarCode->text()+"\n");
+    tmpstr.append(this->m_LE_Doctor->text()+"\n");
+    tmpstr.append(this->m_LE_ImpMan->text()+"\n");
+    tmpstr.append(this->m_LE_TestTime->text()+"\n");
+    tmpstr.append(this->m_LE_Norm->text()+"\n");
+    tmpstr.append(this->m_LE_Value->text()+"\n");
+    tmpstr.append(this->m_LE_Res->text()+"\n");
+    tmpstr.append(this->m_LB_Refer->text()+"\n");
+    tmpstr.append(this->m_LE_Remark->currentText()+"\n");
+
+    tmpstr.append("end\n");
+    tmpstr.append("wizreport");
+
+    return tmpstr;
+}
+
+void MainWindow::SaveClientData()
+{
+    QString tmpstr= m_setDialog->GetSaveURL();
+    tmpstr.append("\\"+this->m_LE_TestTime->text());
+    QDir SavePath(tmpstr);
+    if(!SavePath.exists())
+    {    /**< 如果目标目录不存在，则进行创建 */
+            if(!SavePath.mkdir(SavePath.absolutePath()))
+                return ;
+    }
+    QString fileName = tmpstr+"\\"+GetSaveDataName()+".wiz";
+    if(fileName.size() > 0)
+    {
+        QFile file(fileName);
+        if(file.open(QIODevice::WriteOnly))
+        {
+            file.write(GetSaveData().toLocal8Bit());
+            file.close();
+            RecordHintData();//保存输入记录
+        }
+    }
+}
+
+void MainWindow::TimeOutPrss()
+{
+    /*
+    qDebug()<<"TimeOutPrss"<<m_timode;
+    switch(m_timode)
+    {
+    case CONNECT:
+    {
+       QMessageBox::question(this, tr("连接设备"),
+            QString(tr("提示：无法连接设备！可能的原因：\
+                       \n1：设备是否完成开机。\
+                       \n2：端口号等参数设置是否有误。\
+                       \n3：是否正确连接数据线到COM1。\
+                       \n4：是否将后置开关拨至PC档。\
+                       \n如若以上无法解决问题，请联系售后！")));
+
+       {
+           this->atConnect->setText(tr("连接"));
+           this->atConnect->setIcon(QIcon(":/images/apply.png"));
+           this->pbGetz->setText(tr("获取"));
+           this->pbGetz->setEnabled(false);
+           this->atConnect->setEnabled(true);
+       }
+    }
+        break;
+    case DISCONT:
+    {
+        QMessageBox::question(this, tr("断开设备"),
+                           QString(tr("提示：设备断开时出现异常\
+                                      \n下次连接时请检查设备连接。")));
+        {
+            this->atConnect->setText(tr("连接"));
+            this->atConnect->setIcon(QIcon(":/images/apply.png"));
+            this->pbGetz->setText(tr("获取"));
+            this->pbGetz->setEnabled(false);
+            this->atConnect->setEnabled(true);
+        }
+    }
+        break;
+    case GETDATA:
+    {
+        QMessageBox::question(this, tr("接收数据"),
+                           QString(tr("提示：数据接收时出现异常\
+                                      \n如若继续获取数据请重启软件！")));
+        if(1)
+        {
+            //m_datacom->BreakToSerPort();
+            this->atConnect->setText(tr("连接"));
+            this->atConnect->setIcon(QIcon(":/images/apply.png"));
+            this->pbGetz->setText(tr("获取"));
+            this->pbGetz->setEnabled(false);
+            this->atConnect->setEnabled(true);
+        }
+    }
+        break;
+    default:
+
+        break;
+    }
+    //SetTimeOut(TONUM,true);
+    */
+}
+
+void MainWindow::openUrl(QString url)
+{
+    QDesktopServices::openUrl(QUrl(url));
+}
+
+void MainWindow::SetTimeOut(TIMEOUT_t mode,bool bStop)
+{
+    if(!bStop)
+    {
+        m_timode = mode;
+        m_timeout->start(TIMEOUT_T);
+    }
+    else
+    {
+        m_timeout->stop();
+        m_timode = TONUM;
+    }
+}
+void MainWindow::TidyHisData(QStringList hisdata)
+{
+
+}
+
+
+
+void MainWindow::on_m_LE_SerNum1_valueChanged(int arg1)
+{
+
+}
+
+void MainWindow::on_m_LE_SerNum2_valueChanged(int arg1)
+{
+    /*
+    if(this->m_LE_SerNum2->value()<=this->m_LE_SerNum1->value())
+        this->m_LE_SerNum1->setValue(arg1);
+    */
+}
+
+void MainWindow::cliHintData()
+{
+    m_hintData.clear();
+    while(m_hintData.count()<m_LE_List.count())
+        m_hintData.append(QStringList(""));
+    for(int i=0;i<m_LE_List.count();i++)
+    {
+        m_LE_List.at(i)->cliHintStrings();
+    }
+}
+
+QMap<int,QStringList> MainWindow::currentPageMap()
+{
+    qDebug()<<"currentPageMap()";
+    pageMap.clear();
+    family.clear();
+    name.clear();
+    name.append(" ");
+    family.append(" ");
+
+    //int f_num = 0;
+    int i = 0;
+    for(int row=0;row<m_hisList.count();row++)
+    {
+        if((m_hisList.at(row).at(2) == tr("孕酮"))||(m_hisList.at(row).at(2) == tr("人绒毛膜促性腺激素")))
+        {
+            for(int j=1;j<5;j++)
+            {
+                family.append(m_hisList.at(row).at(j));
+                i++;
+                pageMap.insert(0,family);
+            }
+        }
+        else
+        {
+           for(int j=1;j<7;j++)
+           {
+               name.append(m_hisList.at(row).at(j));
+               pageMap.insert(1,name);
+           }
+        }
+    }
+    //qDebug()<<"pageMap:"<<pageMap;
+    return pageMap;
+}
+
+void MainWindow::hisDataChange(QString str)
+{
+    QFile file(HISH_DB);
+    QStringList filedata;
+    if(file.open(QIODevice::ReadWrite))
+    {
+        int line=0;
+        char acBuff[2048];
+        while(!file.atEnd())
+        {
+            memset(acBuff, 0x00, sizeof(acBuff));
+            file.readLine(acBuff, sizeof(acBuff));
+            QString tmpstr(acBuff);
+            tmpstr.remove("\n");
+            tmpstr.remove("\r");
+            if(!tmpstr.isEmpty())
+                filedata.append(tmpstr);
+        }
+        if(filedata.count() == 0)
+        {
+            filedata.append(tr("##此文档用于保存历史记录，请不要做任何修改##"));
+        }
+        for(line=0;line<filedata.count();line++)
+        {
+            QStringList tmplist = filedata.at(line).split(",");
+            if(tmplist.count()>0)
+            {
+                if(tmplist.at(0) == str)
+                {
+                    break;
+                }
+            }
+        }
+        QString tmpstr;
+        tmpstr.append(str+",");
+        /**/
+        if(m_LE_Remark->objectName() == str)
+        {
+            for(int at=0;at<m_LE_Remark->getAcCount();at++)
+            {
+                if(m_LE_Remark->isCountDefault(at))
+                    tmpstr.append(m_LE_Remark->getAccountText(at)+",");
+            }
+        }
+
+        QString md5 = QCryptographicHash::hash(tmpstr.toLatin1(), QCryptographicHash::Md5).toHex();
+        tmpstr.append(md5);
+        if(line < filedata.count())
+        {
+            filedata.removeAt(line);
+            filedata.insert(line,tmpstr);
+        }
+        else
+        {
+            filedata.append(tmpstr);
+        }
+        file.resize(0);
+
+        for(int i=0;i<filedata.count();i++)
+        {
+            file.write(filedata.at(i).toLocal8Bit());
+            file.write("\n");
+            file.write("\r");
+        }
+        file.close();
+    }
+}
+
+
+
+
+
+
+
+
+
+void MainWindow::on_m_LE_Remark_editTextChanged(const QString &arg1)
+{
+    /*
+    QByteArray str = this->m_LE_Remark->currentText().toLatin1();
+    int len = 160 - str.length();
+    if(len < 0)
+    {
+        while(len < 0)
+        {
+            if(str[str.length()-1]&0x80)
+            {
+                str.remove(str.length()-2,2);
+            }
+            else
+                str.remove(str.length()-1,1);
+            len = 160 - str.length();
+        }
+        QString tmpstr = str;
+        this->m_LE_Remark->clear();
+        this->m_LE_Remark->setEditText(tmpstr);
+
+//      QTextCursor cursor = this->m_LE_Remark->cursor();
+//      cursor.movePosition(QTextCursor::End);
+//      this->m_LE_Remark->setCursor(cursor);
+
+    }
+    m_LB_RemarkNum->setText("("+QString::number(len)+")");
+
+    if(m_LE_Remark->currentText() != " ")
+    {
+        if((!m_LE_Remark->currentText().isEmpty())&&(m_LE_Remark->currentText().endsWith("\n")))
+        {
+            qDebug()<<"Return";
+            QString tmp = m_LE_Remark->currentText();
+            qDebug()<<"tmp"<<tmp;
+            m_LE_Remark->addAccount(m_LE_Remark->currentText());
+            m_LE_Remark->setEditText(tmp);
+            hisDataChange(m_LE_Remark->objectName());
+        }
+    }
+    */
+}
+
+void MainWindow::on_actionPRGO_triggered()// PROG表格
+{
+    //m_prgodialog->show();
+}
+
+void MainWindow::on_actionHCG_triggered()// HCG 表格
+{
+    //m_hcg->show();
+}
+

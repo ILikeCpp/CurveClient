@@ -1,0 +1,48 @@
+<RCC>
+    <qresource prefix="/images">
+        <file>about.png</file>
+        <file>add.png</file>
+        <file>apply.png</file>
+        <file>backup.png</file>
+        <file>bottom.png</file>
+        <file>browse.png</file>
+        <file>cancel.png</file>
+        <file>clear.png</file>
+        <file>contexthelp.png</file>
+        <file>copy.png</file>
+        <file>down.png</file>
+        <file>edit.png</file>
+        <file>enter.png</file>
+        <file>general.png</file>
+        <file>grub_entries.png</file>
+        <file>grub_settings.png</file>
+        <file>language.png</file>
+        <file>lock.png</file>
+        <file>ok.png</file>
+        <file>path.png</file>
+        <file>preview.png</file>
+        <file>qgrubeditor.png</file>
+        <file>qt.png</file>
+        <file>quit.png</file>
+        <file>reload.png</file>
+        <file>remove.png</file>
+        <file>restore.png</file>
+        <file>restore_default.png</file>
+        <file>scan.png</file>
+        <file>settings.png</file>
+        <file>splash.png</file>
+        <file>top.png</file>
+        <file>up.png</file>
+        <file>view.png</file>
+        <file>Action.png</file>
+        <file>PreviewAction.png</file>
+        <file>open.png</file>
+        <file>saveas.png</file>
+        <file>delete.png</file>
+        <file>radioCheck.png</file>
+        <file>radioUncheck.png</file>
+    </qresource>
+    <qresource prefix="/">
+        <file>ccdlog.png</file>
+    </qresource>
+</RCC>
