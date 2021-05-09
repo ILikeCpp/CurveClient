@@ -26,6 +26,7 @@ public:
 signals:
     void signal_clearGrayImage(bool stop);
     void signal_updateImage(const int row, QImage *image);
+    void SigNewRpt(int pos,int data);
 
 public slots:
     void slotStart();
@@ -42,6 +43,7 @@ private:
     QByteArray m_RX_Data;
     int m_row;
     bool m_recvEnd;
+    int m_pos;
 };
 
 #endif // READDATATHREAD_H

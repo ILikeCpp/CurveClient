@@ -99,7 +99,7 @@ QT_END_NAMESPACE
 
 #define TIMEOUT_T (9000)
 
-#define CURVE_COUNT 15
+#define CURVE_COUNT 1
 
 typedef QList<QTreeWidgetItem *> StyleItems;
 
@@ -200,9 +200,9 @@ private slots:
 
     void on_radioButton_excel_toggled(bool checked);
 
-    void on_radioButton_single_toggled(bool checked);
+//    void on_radioButton_single_toggled(bool checked);
 
-    void on_radioButton_multi_toggled(bool checked);
+//    void on_radioButton_multi_toggled(bool checked);
 
     void on_pushButton_clear_clicked();
 

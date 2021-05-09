@@ -84,6 +84,25 @@ MainWindow::MainWindow(QWidget *parent) :
     connect(quitAction, SIGNAL(triggered()), this, SLOT(slotQuit()));
     connect(m_SendTimer, &QTimer::timeout, this, &MainWindow::slotSendTimeout);
 
+    this->comboBox->addItem("采集",0xAE);
+    this->comboBox->addItem("开灯",0xAF);
+    this->comboBox->addItem("关灯",0xB0);
+    this->comboBox->addItem("积分1",0xB1);
+    this->comboBox->addItem("积分2",0xB2);
+    this->comboBox->addItem("积分3",0xB3);
+    this->comboBox->addItem("积分4",0xB4);
+    this->comboBox->addItem("积分5",0xB5);
+    this->comboBox->addItem("积分6",0xB6);
+    this->comboBox->addItem("积分7",0xB7);
+    this->comboBox->addItem("积分8",0xB8);
+    this->comboBox->addItem("积分9",0xB9);
+    this->comboBox->addItem("积分10",0xBA);
+    this->comboBox->addItem("积分11",0xBB);
+    this->comboBox->addItem("积分12",0xBC);
+    this->comboBox->addItem("积分13",0xBD);
+    this->comboBox->addItem("积分14",0xBE);
+    this->comboBox->addItem("积分15",0xBF);
+
     printAction->setEnabled(true);
     printPreviewAction->setEnabled(true);
     setWindowIcon(QIcon(":/ccdlog.png"));
@@ -212,6 +231,7 @@ MainWindow::MainWindow(QWidget *parent) :
     connect(this, &MainWindow::signal_send_cmd, readThread, &ReadDataThread::slot_send_cmd);
     connect(readThread, &ReadDataThread::signal_updateImage, this, &MainWindow::slot_updateImage);
     connect(readThread, &ReadDataThread::signal_clearGrayImage, this, &MainWindow::slot_clearGrayImage);
+    connect(readThread, &ReadDataThread::SigNewRpt, this, &MainWindow::SlotNewRpt);
     m_thread.start();
 }
 
@@ -553,60 +573,60 @@ void MainWindow::on_atAbout_triggered()
 
 void MainWindow::SlotNewRpt(int pos,int data)
 {
-    if (this->radioButton_single->isChecked())
-    {
-        static QVector<double> xData;
-        static QVector<double> yData;
-        static int maxval = 0;
+//    if (this->radioButton_single->isChecked())
+//    {
+//        static QVector<double> xData;
+//        static QVector<double> yData;
+//        static int maxval = 0;
 
-        //curve_ref->detach();
-        //curve_res->detach();
+//        //curve_ref->detach();
+//        //curve_res->detach();
 
-        //unsigned int dot = (unsigned char)data[0]*256+(unsigned char)data[1];
-        //unsigned int res = ((unsigned char)data[2])*256*256*256+((unsigned char)data[3])*256*256+((unsigned char)data[4])*256+((unsigned char)data[5]);
+//        //unsigned int dot = (unsigned char)data[0]*256+(unsigned char)data[1];
+//        //unsigned int res = ((unsigned char)data[2])*256*256*256+((unsigned char)data[3])*256*256+((unsigned char)data[4])*256+((unsigned char)data[5]);
 
-        //qDebug()<<(unsigned char)data[0]<<(unsigned char)data[1]<<(unsigned char)data[2]<<(unsigned char)data[3]<<(unsigned char)data[4]<<(unsigned char)data[5];
-        qDebug()<<pos<<data;
-        if(maxval<data)
-        {
-            maxval = data;
-            //m_pPlot->setAxisScale(QwtPlot::yLeft,   0, maxval+100,(maxval+100)/10);
+//        //qDebug()<<(unsigned char)data[0]<<(unsigned char)data[1]<<(unsigned char)data[2]<<(unsigned char)data[3]<<(unsigned char)data[4]<<(unsigned char)data[5];
+//        qDebug()<<pos<<data;
+//        if(maxval<data)
+//        {
+//            maxval = data;
+//            //m_pPlot->setAxisScale(QwtPlot::yLeft,   0, maxval+100,(maxval+100)/10);
 
-        }
-        if(pos == 0)
-        {
-            maxval = 0;
-            m_pPlot->setAxisScale(QwtPlot::xBottom, 0,  4000,400);
-            m_pPlot->setAxisScale(QwtPlot::yLeft,   0, 4096,200);
-            xData.clear();
-            yData.clear();
-            curve_ref->brush();
-            //return;
-            if (this->radioButton_auto->isChecked())
-            {
-                saveCurrentCurve(curve_ref);
-            }
+//        }
+//        if(pos == 0)
+//        {
+//            maxval = 0;
+//            m_pPlot->setAxisScale(QwtPlot::xBottom, 0,  4000,400);
+//            m_pPlot->setAxisScale(QwtPlot::yLeft,   0, 4096,200);
+//            xData.clear();
+//            yData.clear();
+//            curve_ref->brush();
+//            //return;
+//            if (this->radioButton_auto->isChecked())
+//            {
+//                saveCurrentCurve(curve_ref);
+//            }
 
-        }
+//        }
 
-        if(pos&0x80000000)
-        {
-            m_pPlot->setAxisScale(QwtPlot::xBottom, 0,  pos^0x80000000,(pos^0x80000000)/10);
+//        if(pos&0x80000000)
+//        {
+//            m_pPlot->setAxisScale(QwtPlot::xBottom, 0,  pos^0x80000000,(pos^0x80000000)/10);
 
-            qDebug("%d,%d ",pos^0x80000000,(pos^0x80000000)/10);
-            m_pPlot->replot();
-            return;
-        }
-        this->getdatanum->setText(QString::number(pos));
-        xData.append(pos);
-        yData.append(data);
+//            qDebug("%d,%d ",pos^0x80000000,(pos^0x80000000)/10);
+//            m_pPlot->replot();
+//            return;
+//        }
+//        this->getdatanum->setText(QString::number(pos));
+//        xData.append(pos);
+//        yData.append(data);
 
-        curve_ref->setSamples(&xData[0], &yData[0], xData.length());
+//        curve_ref->setSamples(&xData[0], &yData[0], xData.length());
 
 
-        m_pPlot->replot();
-    }
-    else
+//        m_pPlot->replot();
+//    }
+//    else
     {
         if (0 == pos)
         {
@@ -658,19 +678,19 @@ void MainWindow::SlotNewRpt(int pos,int data)
 
 void MainWindow::on_atConnect_triggered() // 连接
 {
-    if(CCommonInterface::get_datacom()->isBuildCommt())
-    {
-        if(CCommonInterface::get_datacom()->BreakToSerPort())
-        {
+//    if(CCommonInterface::get_datacom()->isBuildCommt())
+//    {
+//        if(CCommonInterface::get_datacom()->BreakToSerPort())
+//        {
 
-        }
-    }
-    else
-    {
-        if(CCommonInterface::get_datacom()->ConnectToSerPort())
-        {
-        }
-    }
+//        }
+//    }
+//    else
+//    {
+//        if(CCommonInterface::get_datacom()->ConnectToSerPort())
+//        {
+//        }
+//    }
 }
 
 
@@ -704,8 +724,9 @@ void MainWindow::SetTimeOut_show()
 void MainWindow::slotSendTimeout()
 {
     qDebug() << "MainWindow::slotSendTimeout";
-    CCommonInterface::get_datacom()->sendstart(this->LEDTIME_SMP->text().toInt());
-    this->getdatanum->setText("0");
+//    CCommonInterface::get_datacom()->sendstart(this->comboBox->currentData().toInt());
+//    this->getdatanum->setText("0");
+    emit signal_send_cmd(QString::number(0xAE,16));
 
 //    QTimer *timer = new QTimer;
 //    connect(timer, &QTimer::timeout, [=]{
@@ -764,10 +785,11 @@ void MainWindow::SetTimeOut(TIMEOUT_t mode,bool bStop)
 void MainWindow::on_START_clicked()
 {
 //    this->START->setDisabled(true);
-    CCommonInterface::get_datacom()->sendstart(this->LEDTIME_SMP->text().toInt());
+//    CCommonInterface::get_datacom()->sendstart(this->comboBox->currentData().toInt());
 //    m_timeout_show->start(3000);
-    this->getdatanum->setText("0");
-
+//    this->getdatanum->setText("0");
+    qDebug() << this->comboBox->currentData().toInt();
+    emit signal_send_cmd(QString::number(this->comboBox->currentData().toInt(),16));
 }
 
 
@@ -829,16 +851,16 @@ void MainWindow::saveTxt(QString fileName)
         QTextStream stream(&file);
         stream.seek(file.size());
 
-        if (this->radioButton_single->isChecked())
-        {
-            int xmax = curve_ref->maxXValue();
-            for(int i=0;i<xmax;i++)
-            {
-                //QString tt = QString::number(curve_ref->data()->sample(i).y(),);
-                stream << curve_ref->data()->sample(i).x() << "," << curve_ref->data()->sample(i).y() << "\n";
-            }
-        }
-        else
+//        if (this->radioButton_single->isChecked())
+//        {
+//            int xmax = curve_ref->maxXValue();
+//            for(int i=0;i<xmax;i++)
+//            {
+//                //QString tt = QString::number(curve_ref->data()->sample(i).y(),);
+//                stream << curve_ref->data()->sample(i).x() << "," << curve_ref->data()->sample(i).y() << "\n";
+//            }
+//        }
+//        else
         {
             for (int i = 0; i < m_curveList.size(); ++i)
             {
@@ -875,15 +897,15 @@ void MainWindow::saveXlsx(QString fileName)
         xlsx.write(1,i+1,QVariant(titles.at(i)),format1);
     }
 
-    if (this->radioButton_single->isChecked())
-    {
-        int xmax = curve_ref->maxXValue();
-        for(int i = 0; i < xmax; ++i){
-            xlsx.write(i+2,1,QVariant(curve_ref->data()->sample(i).x()),format2);
-            xlsx.write(i+2,2,QVariant(curve_ref->data()->sample(i).y()),format2);
-        }
-    }
-    else
+//    if (this->radioButton_single->isChecked())
+//    {
+//        int xmax = curve_ref->maxXValue();
+//        for(int i = 0; i < xmax; ++i){
+//            xlsx.write(i+2,1,QVariant(curve_ref->data()->sample(i).x()),format2);
+//            xlsx.write(i+2,2,QVariant(curve_ref->data()->sample(i).y()),format2);
+//        }
+//    }
+//    else
     {
         //然后逐行的写入
         for (int i = 0; i < m_curveList.size(); ++i)
@@ -1100,7 +1122,7 @@ void MainWindow::on_radioButton_start_toggled(bool checked)
         return;
     }
 
-    if(CCommonInterface::get_datacom()->isBuildCommt())
+    if(true/*CCommonInterface::get_datacom()->isBuildCommt()*/)
     {
         if (m_SendTimer->isActive())
         {
@@ -1152,37 +1174,37 @@ void MainWindow::on_radioButton_excel_toggled(bool checked)
 
 }
 
-void MainWindow::on_radioButton_single_toggled(bool checked)
-{
-    for (int i = 0; i < m_curveList.size(); ++i)
-    {
-        QwtPlotCurve *curve = m_curveList.at(i);
-        curve->detach();
-    }
-    this->curve_ref->attach(m_pPlot);
-}
+//void MainWindow::on_radioButton_single_toggled(bool checked)
+//{
+//    for (int i = 0; i < m_curveList.size(); ++i)
+//    {
+//        QwtPlotCurve *curve = m_curveList.at(i);
+//        curve->detach();
+//    }
+//    this->curve_ref->attach(m_pPlot);
+//}
 
-void MainWindow::on_radioButton_multi_toggled(bool checked)
-{
-    this->curve_ref->detach();
-    for (int i = 0; i < m_curveList.size(); ++i)
-    {
-        QwtPlotCurve *curve = m_curveList.at(i);
-        curve->attach(m_pPlot);
-    }
+//void MainWindow::on_radioButton_multi_toggled(bool checked)
+//{
+//    this->curve_ref->detach();
+//    for (int i = 0; i < m_curveList.size(); ++i)
+//    {
+//        QwtPlotCurve *curve = m_curveList.at(i);
+//        curve->attach(m_pPlot);
+//    }
 
-}
+//}
 
 void MainWindow::on_pushButton_clear_clicked()
 {
-    if (this->radioButton_single->isChecked())
-    {
-        QVector<double> xData;
-        QVector<double> yData;
-        curve_ref->setSamples(xData,yData);
+//    if (this->radioButton_single->isChecked())
+//    {
+//        QVector<double> xData;
+//        QVector<double> yData;
+//        curve_ref->setSamples(xData,yData);
 
-    }
-    else
+//    }
+//    else
     {
         for(int i = 0; i < m_curveDataList.size(); ++i)
         {

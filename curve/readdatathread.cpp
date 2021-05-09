@@ -11,6 +11,7 @@ ReadDataThread::ReadDataThread(QObject *parent) :
 {
     m_recvEnd = false;
     m_row = 0;
+    m_pos = 0;
     QPixmap pix(1420,4867);
     QColor color("white");
     pix.fill(color);
@@ -27,6 +28,8 @@ ReadDataThread::ReadDataThread(QObject *parent) :
                 int hex = bytes.at(i);
 //                qDebug() << hex;
                 m_image.setPixel(i,m_row,qRgb(hex,hex,hex));
+
+                emit SigNewRpt(m_pos++,hex);
             }
 
             m_row++;
@@ -41,6 +44,7 @@ ReadDataThread::ReadDataThread(QObject *parent) :
                 m_image.save(file,"BMP");
 
                 m_row = 0;
+                m_pos = 0;
                 QPixmap pix(1420,4867);
                 QColor color("white");
                 pix.fill(color);
@@ -112,6 +116,7 @@ void ReadDataThread::slot_start_udp(QString ip, QString port)
 void ReadDataThread::slot_send_cmd(QString cmd)
 {
     int num = cmd.toInt(nullptr,16);
+    qDebug() << "num="<<num;
     QByteArray data;
     data.append(num);
 
